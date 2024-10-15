@@ -1,4 +1,4 @@
-"""Seg-y slice loader module."""
+"""SEG-Y slice loader module."""
 
 
 from pathlib import Path
@@ -57,47 +57,10 @@ class SegySliceLoader:
                 range(idx * self.n_xlines, (idx + 1) * self.n_xlines))
         elif axis == 1:
             return self.segy_file.load_traces(
-                range(idx, self.n_traces, self.n_ilines))
+                range(idx, self.n_traces, self.n_xlines))
         elif axis == 2:
             return self.segy_file.load_depth_slices([idx]).reshape(
                 self.n_ilines, self.n_xlines)
         else:
             raise ValueError(
                 f'Axis must be in the range from 0 to 2 but got {axis}.')
-        
-
-def calculate_quantile_values(loader: SegySliceLoader):
-    for axis, length in enumerate([loader.n_ilines,
-                                   loader.n_xlines,
-                                   loader.n_samples]):
-        maxes = []
-        mins = []
-        for i in range(length):
-            slice = loader.get_slice(i, axis)
-            vmin, vmax = np.quantile(slice, (0.01, 0.99))
-            maxes.append(vmax)
-            mins.append(vmin)
-        vmin = np.mean(vmin)
-        vmax = np.mean(vmax)
-        print(f'{axis=}: {vmin=}, {vmax=}')
-        
-
-if __name__ == '__main__':
-    # Check slice loader
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    path = '../data/seismic/seismic.sgy'
-    loader = SegySliceLoader(path)
-    print(loader.n_ilines, loader.n_xlines, loader.n_samples)
-
-    slice = loader.get_slice(50, 2)
-    print(slice.shape)
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-    img = ax1.imshow(slice.T, cmap='Greys_r', vmin=slice.min(), vmax=slice.max())
-    vmin, vmax = np.quantile(slice, (0.01, 0.99))
-    img = ax2.imshow(slice.T, cmap='Greys_r', vmin=vmin, vmax=vmax)
-    plt.show()
-
-    calculate_quantile_values(loader)
