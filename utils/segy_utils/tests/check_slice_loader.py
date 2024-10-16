@@ -15,49 +15,70 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parents[3]))
 from utils.data_utils.data_functions import show_images_cv2
 from utils.segy_utils.segy_slice_loader import SegySliceLoader
-from utils.argparse_utils import non_negative_int, required_length
+from utils.argparse_utils import (
+    non_negative_int, natural_int, required_length)
 
 
 def main(
     segy_path: Path,
     axes_to_load: List[int] = (0, 1),
-    clip_values: Optional[Tuple[int, int]] = None
+    clip_values: Optional[Tuple[int, int]] = None,
+    n_slices: int = 1
 ):
     loader = SegySliceLoader(segy_path)
     print(f'{loader.n_ilines=}, {loader.n_xlines=}, {loader.n_samples=}')
+    to_next_axis = False
 
     for axis, axis_len in zip(axes_to_load, (loader.n_ilines,
                                              loader.n_xlines,
                                              loader.n_samples)):
         logger.info(f'Iterate over axis {axis}...')
 
-        for i in tqdm(range(axis_len)):
-            slice = loader.get_slice(i, axis)
-            slice = slice[..., None]
-            if i == 0:
-                logger.info(f'Axis shape: {slice.shape}')
+        pbar = tqdm(range(axis_len))
+        for i in range(0, axis_len, n_slices):
 
-            normalized_slice = (slice + 32767) / (32767 * 2)  # Normalize
-            images = [normalized_slice]
+            if n_slices == 1:
+                idx = i
+            else:
+                idx = (i, min(i + n_slices, axis_len))
+            slices = loader.get_slices(idx, axis)
+
+            if i == 0:
+                logger.info(f'Axis shape: {slices.shape[:2]}')
+
+            normalized_slices = (slices + 32767) / (32767 * 2)  # Normalize
+            
+            # Titles for cv2 windows
             titles = [
                 f'Axis {axis}. Press esc to exit. Press enter for next axis.']
-
-            # Add clipped img if needed
             if clip_values:
-                clip_slice = slice.copy()
-                clip_slice[clip_slice < clip_values[0]] = clip_values[0]
-                clip_slice[clip_slice > clip_values[1]] = clip_values[1]
-                clip_slice = ((clip_slice - clip_values[0]) /
-                              (clip_values[1] - clip_values[0]))
-                images.append(clip_slice)
                 titles.append('Clipped slice')
 
-            key = show_images_cv2(images, titles, destroy_windows=False)
-            if key == 27:  # esc
-                destroyAllWindows()
-                return
-            elif key == 13:
-                destroyAllWindows()
+            # Iterate along slices
+            for j in range(slices.shape[-1]):
+                pbar.update(1)
+
+                images = [normalized_slices[..., j]]
+
+                # Clipped slice if needed
+                if clip_values:
+                    clip_slice = slices[..., j].copy()
+                    clip_slice[clip_slice < clip_values[0]] = clip_values[0]
+                    clip_slice[clip_slice > clip_values[1]] = clip_values[1]
+                    clip_slice = ((clip_slice - clip_values[0]) /
+                                  (clip_values[1] - clip_values[0]))
+                    images.append(clip_slice)
+
+                key = show_images_cv2(images, titles, destroy_windows=False)
+                if key == 27:  # esc
+                    destroyAllWindows()
+                    return
+                elif key == 13:
+                    destroyAllWindows()
+                    to_next_axis = True
+                    break
+            if to_next_axis:
+                to_next_axis = False
                 break
         else:
             destroyAllWindows()
@@ -79,6 +100,8 @@ def parse_args() -> argparse.Namespace:
                         default=None,
                         help=('Min/max values to clip slices. '
                               'If not passed, clip is not performed'))
+    parser.add_argument('--n_slices', type=natural_int, default=1,
+                        help='Number of slices loaded at once.')
     args = parser.parse_args()
 
     return args
@@ -87,4 +110,4 @@ def parse_args() -> argparse.Namespace:
 if __name__ == '__main__':
     args = parse_args()
     main(segy_path=args.segy_path, axes_to_load=args.axes_to_load,
-         clip_values=args.clip_values)
+         clip_values=args.clip_values, n_slices=args.n_slices)
