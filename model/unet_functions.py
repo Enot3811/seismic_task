@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import math
+from typing import Dict, Any
 
 import torch
 import torch.nn.functional as F
@@ -10,12 +11,13 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import albumentations as A
 
-from unet import UNet
-from utils import NoiseGenerator
-from segy_slice_dataset import SegySliceDataset
+from model.unet import UNet
+from utils.data_utils.data_functions import make_noise_generator, 
+from utils.segy_utils.segy_slice_dataset import SegySliceDataset
 
 
-def main():
+# TODO всё переписать
+def train_unet(config: Dict[str, Any]):
 
     # Training params
     batch_size = 16
@@ -29,7 +31,7 @@ def main():
     # Noise generator
     n_steps = 100
     beta = torch.linspace(0.0001, 0.04, n_steps, device=device)
-    make_noise = NoiseGenerator(beta)
+    make_noise = make_noise_generator(beta)
 
     # Datasets and dataloaders
     crop_size = (224, 224)
@@ -150,5 +152,82 @@ def main():
     log_writer.close()
 
 
-if __name__ == '__main__':
-    main()
+def infer_on_noise(config: Dict[str, Any]):
+    """Infer trained unet on pure noise."""
+    ckpt_pth = 'trains/train5/ckpts/best_checkpoint.pth'
+    device = torch.device('cuda')
+    unet = UNet(image_channels=1, n_channels=32).to(device=device)
+    unet.load_state_dict(torch.load(ckpt_pth)['model_state_dict'])
+
+    # mean = 0.5
+    # std = 0.19
+
+    n_steps = 100
+    beta = torch.linspace(0.0001, 0.04, n_steps).to(device=device)
+    denoise_sample = Denoiser(beta)
+
+    # Make and show 10 examples
+    x = torch.randn(10, 1, 224, 224).to(device=device)
+    for i in range(n_steps):
+        t = torch.tensor(n_steps - i - 1, dtype=torch.long).to(device=device)
+        with torch.no_grad():
+            pred_noise = unet(x.float(), t.unsqueeze(0))
+            x = denoise_sample(x, pred_noise, t.unsqueeze(0))
+    # x = x * std + mean
+
+    for i in range(10):
+        img = x[i].cpu().permute(1, 2, 0).numpy()
+
+        cv2.imshow('denoised', img)
+        key = cv2.waitKey(0)
+        if key == 27:
+            break
+
+
+def infer_on_noised_slices(config: Dict[str, Any]):
+    """Infer trained unet on dataset slices."""
+    ckpt_pth = 'trains/train5/ckpts/best_checkpoint.pth'
+    device = torch.device('cuda')
+    unet = UNet(image_channels=1, n_channels=32).to(device=device)
+    unet.load_state_dict(torch.load(ckpt_pth)['model_state_dict'])
+
+    mean = 0.5
+    std = 0.19
+
+    n_steps = 100
+    beta = torch.linspace(0.0001, 0.04, n_steps).to(device=device)
+    denoise_sample = Denoiser(beta)
+    make_noise = make_noise_generator(beta)
+
+    sgy_path = '../data/seismic/seismic.sgy'
+    crop_size = (224, 224)
+    transforms = A.Compose(transforms=[
+        A.RandomCrop(*crop_size),
+        A.Normalize(mean=(mean,), std=(std,), max_pixel_value=1)
+    ])
+    val_axes = (0,)
+    val_dset = SegySliceDataset(sgy_path, val_axes, transforms=transforms)
+
+    for source in val_dset:
+
+        x = source[None, ...].to(device=device)
+        noised_x, noise = make_noise(
+            x, torch.tensor(50, dtype=torch.long, device=device))
+        x = noised_x
+
+        for i in range(50, n_steps):
+            t = torch.tensor(n_steps - i - 1, dtype=torch.long).to(device=device)
+            with torch.no_grad():
+                pred_noise = unet(x.float(), t.unsqueeze(0))
+                x = denoise_sample(x, pred_noise, t.unsqueeze(0))
+
+        x = x[0].cpu().permute(1, 2, 0).numpy()
+        noised_x = noised_x[0].cpu().permute(1, 2, 0).numpy()
+        source = source.permute(1, 2, 0).numpy()
+
+        img = np.hstack((source, noised_x, x))
+
+        cv2.imshow('Sample', img)
+        key = cv2.waitKey(0)
+        if key == 27:
+            break
