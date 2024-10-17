@@ -1,0 +1,8 @@
+numpy
+opencv-python
+matplotlib
+albumentations
+torch
+tensorboard
+segfast
+segyio
