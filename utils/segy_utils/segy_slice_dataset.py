@@ -2,11 +2,10 @@ from pathlib import Path
 from typing import Tuple, Optional, Union, List
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 import albumentations as A
-
-from segy_slice_loader import SegySliceLoader
-
+from utils.segy_utils.segy_slice_loader import SegySliceLoader
 
 class SegySliceDataset(Dataset):
     """Dataset class for loading and cropping seg-y slices."""
@@ -42,7 +41,7 @@ class SegySliceDataset(Dataset):
         }
         self.indexes = []
         for axis in axes_to_use:
-            self.indexes += [(axis, i) for i in range(slices_per_axis[axis])]
+            self.indexes += [(i, axis) for i in range(slices_per_axis[axis])]
 
         self.min_value, self.max_value = values_range
         self.transforms = transforms
@@ -51,8 +50,7 @@ class SegySliceDataset(Dataset):
         return len(self.indexes)
 
     def __getitem__(self, idx: int):
-        axis, idx = self.indexes[idx]
-        slice = self.loader.get_slice(idx, axis)
+        slice = self.loader.get_slices(*self.indexes[idx])
 
         # Clip and normalize slice values
         slice[slice < self.min_value] = self.min_value
@@ -63,44 +61,30 @@ class SegySliceDataset(Dataset):
             slice = self.transforms(image=slice)['image']
 
         # Convert and add channel dim
-        slice_tensor = torch.tensor(slice, dtype=torch.float32)[None, ...]
+        slice_tensor = torch.tensor(slice, dtype=torch.float32).permute(2, 0, 1)
 
-        
         return slice_tensor
     
     @staticmethod
     def collate_fn(batch: List[torch.Tensor]):
-        raise NotImplementedError()
+        """Make all the slices to have the same size if necessary.
 
-
-if __name__ == '__main__':
-    # Check dataset
-    import random
-    import matplotlib.pyplot as plt
-    random.seed = 42
-
-    path = '../data/seismic/seismic.sgy'
-    dset = SegySliceDataset(path, values_range=(-5800, 5800))
-    print(f'Dataset size: {len(dset)=}')
-
-    for _ in range(3):
-        idx = random.randint(0, len(dset))
-        sample = dset[idx]
-        print(f'Sample {idx}: {sample.shape}, {sample.max()}, {sample.min()}')
-
-        plt.imshow(sample.squeeze(), cmap='Greys_r')
-        plt.show()
-
-    transforms = A.Compose(transforms=[
-        A.RandomCrop(224, 224),
-        # A.Normalize(mean=(-2.0068,), std=(2434.5066,), max_pixel_value=32767)
-        # A.Normalize(mean=(8.5735,), std=(2250.4207,), max_pixel_value=7021)
-    ])
-    dset = SegySliceDataset(path, transforms=transforms)
-    for _ in range(3):
-        idx = random.randint(0, len(dset))
-        sample = dset[idx]
-        print(f'Sample {idx}: {sample.shape}, {sample.max()}, {sample.min()}')
-
-        plt.imshow(sample.squeeze(), cmap='Greys_r')
-        plt.show()
+        Parameters
+        ----------
+        batch : List[torch.Tensor]
+            List of slices that can have different size.
+        """
+        min_h = min_w = None
+        for slice in batch:
+            h, w = slice.shape[1:]
+            if min_h is None or min_h > h:
+                min_h = h
+            if min_w is None or min_w > w:
+                min_w = w
+        # b, c, h, w
+        for i in range(len(batch)):
+            if batch[i].shape[1] != min_h or batch[i].shape[2] != min_w:
+                batch[i] = F.interpolate(
+                    batch[i][None, ...], size=(min_h, min_w), 
+                    mode='bilinear', align_corners=False).squeeze(0)
+        return torch.stack(batch)
