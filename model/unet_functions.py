@@ -1,7 +1,7 @@
 from pathlib import Path
 import shutil
 import math
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -11,9 +11,11 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import albumentations as A
 from loguru import logger
+import matplotlib.pyplot as plt
 
 from model.unet import UNet
-from utils.data_utils.data_functions import make_noise_generator
+from utils.data_utils.data_functions import (
+    make_noise_generator, make_denoiser, show_images_cv2)
 from utils.segy_utils.segy_slice_dataset import SegySliceDataset
 
 
@@ -159,39 +161,68 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
     log_writer.close()
 
 
-# TODO всё переписать
-def infer_on_noise(config: Dict[str, Any]):
+def infer_on_noise(
+    config: Dict[str, Any],
+    model: torch.nn.Module,
+    n_examples: int = 10,
+    show_mode: str = 'plt',
+    device: str = 'cpu'
+):
     """Infer trained unet on pure noise."""
-    ckpt_pth = 'trains/train5/ckpts/best_checkpoint.pth'
-    device = torch.device('cuda')
-    unet = UNet(image_channels=1, n_channels=32).to(device=device)
-    unet.load_state_dict(torch.load(ckpt_pth)['model_state_dict'])
+    # Device
+    if device == 'cuda':
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            logger.warning('Cuda is not available. Switching device to "CPU".')
+            device = torch.device('cpu')
+    elif device == 'cpu':
+        device = torch.device('cpu')
+    else:
+        raise ValueError('Wrong device')
+    model = model.to(device=device)
+    
+    # Show mode
+    if show_mode not in ('plt', 'cv2'):
+        raise ValueError
 
-    # mean = 0.5
-    # std = 0.19
+    # Denoiser
+    beta = torch.linspace(
+        0.0001, 0.04, config['noise_steps']).to(device=device)
+    denoise_sample = make_denoiser(beta)
 
-    n_steps = 100
-    beta = torch.linspace(0.0001, 0.04, n_steps).to(device=device)
-    denoise_sample = Denoiser(beta)
-
-    # Make and show 10 examples
+    # Make 10 examples
     x = torch.randn(10, 1, 224, 224).to(device=device)
-    for i in range(n_steps):
-        t = torch.tensor(n_steps - i - 1, dtype=torch.long).to(device=device)
+    for i in tqdm(range(config['noise_steps'])):
+        t = torch.tensor(
+            config['noise_steps'] - i - 1, dtype=torch.long).to(device=device)
         with torch.no_grad():
-            pred_noise = unet(x.float(), t.unsqueeze(0))
+            pred_noise = model(x, t.unsqueeze(0))
             x = denoise_sample(x, pred_noise, t.unsqueeze(0))
-    # x = x * std + mean
+    
+    # Normalize
+    if config['mean_std']:
+        raise NotImplementedError()  # TODO
+    x[x < 0.0] = 0.0
+    x[x > 1.0] = 1.0
 
-    for i in range(10):
-        img = x[i].cpu().permute(1, 2, 0).numpy()
+    # Show examples
+    imgs = [x[i].cpu().permute(1, 2, 0).numpy() for i in range(x.shape[0])]
+    if show_mode == 'plt':
+        # Make a grid from samples
+        nrows = math.ceil(n_examples / 5)
+        fig, axes = plt.subplots(nrows=nrows, ncols=5, figsize=(15, 6))
+        axes = axes.flatten()
+        for i, img in enumerate(imgs):
+            axes[i].imshow(img, cmap='Greys_r')
+            axes[i].axis('off')
+        plt.tight_layout()
+        plt.show()
+    else:
+        show_images_cv2(imgs, destroy_windows=True)
 
-        cv2.imshow('denoised', img)
-        key = cv2.waitKey(0)
-        if key == 27:
-            break
 
-
+# TODO всё переписать
 def infer_on_noised_slices(config: Dict[str, Any]):
     """Infer trained unet on dataset slices."""
     ckpt_pth = 'trains/train5/ckpts/best_checkpoint.pth'
