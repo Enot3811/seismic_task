@@ -88,7 +88,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
         # Train step
         train_losses = []
         pbar = tqdm(train_loader, desc=f'Epoch {e} train')
-        for i, batch in enumerate(pbar):
+        for batch in train_loader:
             batch = batch.to(device=device)
 
             # Noise samples
@@ -104,13 +104,19 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
+            pbar.update()
+            pbar.set_postfix_str(f'Batch loss: {loss.item()}')
+
+        train_loss = torch.mean(torch.tensor(train_losses))
+        pbar.set_postfix_str(f'Epoch loss: {train_loss.item()}')
+        pbar.close()
 
         # Val step
         with torch.no_grad():
             unet.eval()
             val_losses = []
             pbar = tqdm(val_loader, desc=f'Epoch {e} val')
-            for i, batch in enumerate(pbar):
+            for batch in val_loader:
                 batch = batch.to(device=device)
 
                 # Noise samples
@@ -123,14 +129,17 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
 
                 loss = F.mse_loss(noise, pred_noise)
                 val_losses.append(loss)
+                pbar.update()
+                pbar.set_postfix_str(f'Batch loss: {loss.item()}')
+
+            val_loss = torch.mean(torch.tensor(val_losses))
+            pbar.set_postfix_str(f'Epoch loss: {val_loss.item()}')
+            pbar.close()
 
         lr_scheduler.step()
         lr = lr_scheduler.get_last_lr()[0]
 
         # Log
-        train_loss = torch.mean(torch.tensor(train_losses))
-        val_loss = torch.mean(torch.tensor(val_losses))
-
         log_writer.add_scalars('loss', {
             'train': train_loss,
             'val': val_loss
