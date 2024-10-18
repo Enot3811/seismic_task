@@ -6,3 +6,6 @@ torch
 tensorboard
 segfast
 segyio
+loguru
+tqdm
+ipykernel
