@@ -33,6 +33,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
         device = torch.device('cpu')
     else:
         raise ValueError('Wrong device')
+    model.to(device=device)
     
     # Random
     torch.random.manual_seed(config['random_seed'])
@@ -222,51 +223,88 @@ def infer_on_noise(
         show_images_cv2(imgs, destroy_windows=True)
 
 
-# TODO всё переписать
-def infer_on_noised_slices(config: Dict[str, Any]):
+def infer_on_noised_slices(
+    config: Dict[str, Any],
+    model: torch.nn.Module,
+    n_examples: int = 10,
+    show_mode: str = 'plt',
+    device: str = 'cpu'
+):
     """Infer trained unet on dataset slices."""
-    ckpt_pth = 'trains/train5/ckpts/best_checkpoint.pth'
-    device = torch.device('cuda')
-    unet = UNet(image_channels=1, n_channels=32).to(device=device)
-    unet.load_state_dict(torch.load(ckpt_pth)['model_state_dict'])
+    # Device
+    if device == 'cuda':
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+        else:
+            logger.warning('Cuda is not available. Switching device to "CPU".')
+            device = torch.device('cpu')
+    elif device == 'cpu':
+        device = torch.device('cpu')
+    else:
+        raise ValueError('Wrong device')
+    model = model.to(device=device)
 
-    mean = 0.5
-    std = 0.19
-
-    n_steps = 100
-    beta = torch.linspace(0.0001, 0.04, n_steps).to(device=device)
-    denoise_sample = Denoiser(beta)
+    # Show mode
+    if show_mode not in ('plt', 'cv2'):
+        raise ValueError
+    
+    # Noiser and denoiser
+    beta = torch.linspace(
+        0.0001, 0.04, config['noise_steps']).to(device=device)
+    denoise_sample = make_denoiser(beta)
     make_noise = make_noise_generator(beta)
 
-    sgy_path = '../data/seismic/seismic.sgy'
-    crop_size = (224, 224)
-    transforms = A.Compose(transforms=[
-        A.RandomCrop(*crop_size),
-        A.Normalize(mean=(mean,), std=(std,), max_pixel_value=1)
-    ])
-    val_axes = (0,)
-    val_dset = SegySliceDataset(sgy_path, val_axes, transforms=transforms)
+    # Augmentations
+    if config['crop_size'] or config['mean_std']:
+        transforms = []
+        if config['crop_size']:
+            transforms.append(A.RandomCrop(*config['crop_size']))
+        if config['mean_std']:
+            transforms.append(A.Normalize(*config['mean_std'],
+                                          max_pixel_value=1))
+        transforms = A.Compose(transforms=transforms)
+    else:
+        transforms=None
 
-    for source in val_dset:
+    val_dset = SegySliceDataset(
+        config['sgy_path'], config['val_axes'], transforms=transforms)
+    sources = torch.stack(
+        [val_dset[i] for i in range(n_examples)]).to(device=device)
 
-        x = source[None, ...].to(device=device)
-        noised_x, noise = make_noise(
-            x, torch.tensor(50, dtype=torch.long, device=device))
-        x = noised_x
+    noised_x, noise = make_noise(
+        sources, torch.tensor(50, dtype=torch.long, device=device))
+    x = noised_x
 
-        for i in range(50, n_steps):
-            t = torch.tensor(n_steps - i - 1, dtype=torch.long).to(device=device)
-            with torch.no_grad():
-                pred_noise = unet(x.float(), t.unsqueeze(0))
-                x = denoise_sample(x, pred_noise, t.unsqueeze(0))
+    for i in range(50, config['noise_steps']):
+        t = torch.tensor(config['noise_steps'] - i - 1, dtype=torch.long).to(device=device)
+        with torch.no_grad():
+            pred_noise = model(x, t.unsqueeze(0))
+            x = denoise_sample(x, pred_noise, t.unsqueeze(0))
 
-        x = x[0].cpu().permute(1, 2, 0).numpy()
-        noised_x = noised_x[0].cpu().permute(1, 2, 0).numpy()
-        source = source.permute(1, 2, 0).numpy()
+    # Normalize
+    if config['mean_std']:
+        raise NotImplementedError()  # TODO
+    x[x < 0.0] = 0.0
+    x[x > 1.0] = 1.0
 
-        img = np.hstack((source, noised_x, x))
+    # Show examples
+    if show_mode == 'plt':
+        nrows = math.ceil(n_examples / 5)
 
-        cv2.imshow('Sample', img)
-        key = cv2.waitKey(0)
-        if key == 27:
-            break
+        for imgs, title in [(sources, 'Origin'),
+                            (noised_x, 'Noised slices'),
+                            (x, 'Denoised slices')]:
+            imgs = [imgs[i].cpu().permute(1, 2, 0).numpy()
+                    for i in range(imgs.shape[0])]
+
+            fig, axes = plt.subplots(nrows=nrows, ncols=5, figsize=(15, 6))
+            fig.suptitle(title)
+            axes = axes.flatten()
+            for i, img in enumerate(imgs):
+                axes[i].imshow(img, cmap='Greys_r')
+                axes[i].axis('off')
+            fig.tight_layout()
+        plt.show()
+    else:
+        # TODO переделать
+        show_images_cv2(imgs, destroy_windows=True)
