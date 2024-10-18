@@ -36,11 +36,12 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
     torch.random.manual_seed(config['random_seed'])
     
     # Directories
-    if config['save_path'].exists():
-        input(f'{str(config['save_path'])} already exists. Continue to rewrite it.')
-        shutil.rmtree(config['save_path'])
-    tensorboard_dir = config['save_path'] / 'tensorboard'
-    ckpt_dir = config['save_path'] / 'ckpts'
+    save_dir = Path(config['save_dir'])
+    if save_dir.exists():
+        input(f'{str(save_dir)} already exists. Continue to rewrite it.')
+        shutil.rmtree(save_dir)
+    tensorboard_dir = save_dir / 'tensorboard'
+    ckpt_dir = save_dir / 'ckpts'
     tensorboard_dir.mkdir(parents=True)
     ckpt_dir.mkdir(parents=True)
 
@@ -92,7 +93,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
 
             # Noise samples
             t = (torch.randint(
-                0, config['noise_steps'], (config['batch_size'],),
+                0, config['noise_steps'], (batch.shape[0],),
                 dtype=torch.long).to(device=device))  # Random 't's
             batch_noised, noise = make_noise(batch, t)
 
@@ -114,7 +115,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
 
                 # Noise samples
                 t = (torch.randint(
-                    0, config['noise_steps'], (config['batch_size'],),
+                    0, config['noise_steps'], (batch.shape[0],),
                     dtype=torch.long).to(device=device))  # Random 't's
                 batch_noised, noise = make_noise(batch, t)
 
