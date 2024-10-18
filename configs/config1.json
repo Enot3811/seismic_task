@@ -1,0 +1,21 @@
+{
+    "train_config": {
+        "sgy_path": "../data/seismic/seismic.sgy",
+        "save_dir": "trains/train1",
+        "batch_size": 16,
+        "start_lr": 2e-4,
+        "end_lr": 2e-6,
+        "epochs": 20,
+        "device": "cuda",
+        "crop_size": [224, 224],
+        "mean_std": null,
+        "train_axes": [1],
+        "val_axes": [0],
+        "random_seed": 42,
+        "noise_steps": 100
+    },
+    "model_config": {
+        "image_channels": 1,
+        "n_channels": 32
+    }
+}
