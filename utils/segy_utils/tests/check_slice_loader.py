@@ -26,7 +26,7 @@ def main(
     n_slices: int = 1
 ):
     loader = SegySliceLoader(segy_path)
-    print(f'{loader.n_ilines=}, {loader.n_xlines=}, {loader.n_samples=}')
+    logger.info(f'{loader.n_ilines=}, {loader.n_xlines=}, {loader.n_samples=}')
     to_next_axis = False
 
     for axis, axis_len in zip(axes_to_load, (loader.n_ilines,
