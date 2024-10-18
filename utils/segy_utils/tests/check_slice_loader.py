@@ -13,7 +13,7 @@ from cv2 import destroyAllWindows
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parents[3]))
-from utils.data_utils.data_functions import show_images_cv2
+from utils.drawing_utils import show_images_cv2
 from utils.segy_utils.segy_slice_loader import SegySliceLoader
 from utils.argparse_utils import (
     non_negative_int, natural_int, required_length)

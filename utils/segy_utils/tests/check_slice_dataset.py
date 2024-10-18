@@ -15,8 +15,7 @@ from tqdm import tqdm
 import albumentations as A
 
 sys.path.append(str(Path(__file__).parents[3]))
-from utils.data_utils.data_functions import show_images_cv2
-from utils.segy_utils.segy_slice_loader import SegySliceLoader
+from utils.drawing_utils import show_images_cv2
 from utils.argparse_utils import (
     non_negative_int, natural_int, required_length)
 from utils.segy_utils.segy_slice_dataset import SegySliceDataset
@@ -96,13 +95,7 @@ def parse_args() -> argparse.Namespace:
                         help='Batch size for DataLoader.')
     parser.add_argument('--random_seed', type=int, default=42,
                         help='Random seed for dataset shuffling.')
-    args = parser.parse_args([
-        '../data/seismic/seismic.sgy',
-        '--batch_size', '16',
-        '--clip_values', '-5800', '5800',
-        '--crop_size', '224', '224',
-        '--mean_std', 
-    ])
+    args = parser.parse_args()
 
     if args.clip_values[0] > args.clip_values[1]:
         raise ValueError()  # TODO

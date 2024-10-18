@@ -13,8 +13,8 @@ import albumentations as A
 from loguru import logger
 import matplotlib.pyplot as plt
 
-from utils.data_utils.data_functions import (
-    make_noise_generator, make_denoiser, show_images_cv2)
+from utils.drawing_utils import show_images_cv2
+from model.model_helpers import make_noise_generator, make_denoiser
 from utils.segy_utils.segy_slice_dataset import SegySliceDataset
 
 
