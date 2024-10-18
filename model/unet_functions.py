@@ -13,7 +13,6 @@ import albumentations as A
 from loguru import logger
 import matplotlib.pyplot as plt
 
-from model.unet import UNet
 from utils.data_utils.data_functions import (
     make_noise_generator, make_denoiser, show_images_cv2)
 from utils.segy_utils.segy_slice_dataset import SegySliceDataset
@@ -69,9 +68,11 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
 
     # Datasets and dataloaders
     train_dset = SegySliceDataset(
-        config['sgy_path'], config['train_axes'], transforms=transforms)
+        config['sgy_path'], config['train_axes'], transforms=transforms,
+        values_range=config['values_range'])
     val_dset = SegySliceDataset(
-        config['sgy_path'], config['val_axes'], transforms=transforms)
+        config['sgy_path'], config['val_axes'], transforms=transforms,
+        values_range=config['values_range'])
 
     train_loader = DataLoader(train_dset, config['batch_size'], shuffle=True)
     val_loader = DataLoader(val_dset, config['batch_size'], shuffle=True)
@@ -267,7 +268,8 @@ def infer_on_noised_slices(
         transforms=None
 
     val_dset = SegySliceDataset(
-        config['sgy_path'], config['val_axes'], transforms=transforms)
+        config['sgy_path'], config['val_axes'], transforms=transforms,
+        values_range=config['values_range'])
     sources = torch.stack(
         [val_dset[i] for i in range(n_examples)]).to(device=device)
 
