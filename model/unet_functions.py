@@ -73,11 +73,8 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
     train_loader = DataLoader(train_dset, config['batch_size'], shuffle=True)
     val_loader = DataLoader(val_dset, config['batch_size'], shuffle=True)
 
-    # Model
-    unet = UNet(image_channels=1, n_channels=32).to(device=device)
-
     # Optimizer
-    optimizer = torch.optim.AdamW(unet.parameters(), lr=config['start_lr'])
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config['start_lr'])
     lr_scheduler = optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=config['epochs'], eta_min=config['end_lr'])
 
@@ -86,6 +83,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
     for e in range(config['epochs']):
 
         # Train step
+        model.train()
         train_losses = []
         pbar = tqdm(train_loader, desc=f'Epoch {e} train')
         for batch in train_loader:
@@ -97,7 +95,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
                 dtype=torch.long).to(device=device))  # Random 't's
             batch_noised, noise = make_noise(batch, t)
 
-            pred_noise = unet(batch_noised, t)
+            pred_noise = model(batch_noised, t)
             
             loss = F.mse_loss(noise, pred_noise)
             optimizer.zero_grad()
@@ -113,7 +111,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
 
         # Val step
         with torch.no_grad():
-            unet.eval()
+            model.eval()
             val_losses = []
             pbar = tqdm(val_loader, desc=f'Epoch {e} val')
             for batch in val_loader:
@@ -125,7 +123,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
                     dtype=torch.long).to(device=device))  # Random 't's
                 batch_noised, noise = make_noise(batch, t)
 
-                pred_noise = unet(batch_noised, t)
+                pred_noise = model(batch_noised, t)
 
                 loss = F.mse_loss(noise, pred_noise)
                 val_losses.append(loss)
@@ -148,7 +146,7 @@ def train_unet(config: Dict[str, Any], model: torch.nn.Module):
         
         # Save model
         checkpoint = {
-            'model_state_dict': unet.state_dict(),
+            'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'epoch': e + 1
         }
