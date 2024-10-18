@@ -78,39 +78,6 @@ def show_images_cv2(
     return key_code
 
 
-def show_image_plt(
-    img: NDArray,
-    ax: Optional[matplotlib.axes.Axes] = None,
-    figsize: Tuple[int, int] = (16, 8),
-    plt_show: bool = False
-) -> matplotlib.axes.Axes:
-    """Display an image on a matplotlib figure.
-
-    Parameters
-    ----------
-    img : NDArray
-        An image to display with shape `(h, w, c)` in RGB.
-    ax : Optional[matplotlib.axes.Axes], optional
-        Axes for image showing. If not given then a new Figure and Axes
-        will be created.
-    figsize : Tuple[int, int], optional
-        Figsize for pyplot figure. By default is `(16, 8)`.
-    plt_show : bool, optional
-        Whether to make `plt.show()` in this function's calling.
-        By default is `False`.
-
-    Returns
-    -------
-    matplotlib.axes.Axes
-        Axes with showed image.
-    """
-    if ax is None:
-        _, ax = plt.subplots(figsize=figsize)
-    ax.imshow(img)
-    if plt_show:
-        plt.show()
-    return ax
-
 # TODO docstring
 def gather(consts: torch.Tensor, t: torch.Tensor):
     """Gather consts for $t$ and reshape to feature map shape"""
